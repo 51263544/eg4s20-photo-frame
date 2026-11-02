@@ -156,6 +156,10 @@ wire [127:0] spec_h;             // 16 x 8 bit spectrum bar heights (P6)
 // firmware 4-hex-digit console (audio_ctrl P4 +0x18 -> 7-segment display)
 wire [15:0] fw_disp_val;
 wire        fw_disp_en;
+// P8 transition effect control, out of sd_ctrl (0x18)
+wire [2:0]  sd_fx_mode;
+wire        sd_fx_dark;
+wire [1:0]  sd_fx_amb;   // ambient layer: 0 = off, 1 = ripple, 2 = sweep
 
 CortexM0_SoC u_soc (
         .sys_clk        (sys_clk),
@@ -187,6 +191,9 @@ CortexM0_SoC u_soc (
         .write_buf_idx  (write_buf_idx),
         .disp_buf_idx   (disp_buf_idx),
         .disp_en        (disp_en),
+        .fx_mode        (sd_fx_mode),
+        .fx_dark        (sd_fx_dark),
+        .fx_amb         (sd_fx_amb),
         .stream_active  (stream_active),
         .sd_init_done   (sd_init_done),
         .sd_reinit      (sd_reinit),
@@ -672,9 +679,170 @@ always @(posedge pxl_clk or posedge rst_all) begin
     end
 end
 
-wire [23:0] vout_data = bars_mode ? dbg_pixel
-                      : (spec_on  ? spec_px
-                      : (fdisp_en ? isp_px : 24'd0));
+//------------------------------------------------------------------------------
+// Ambient animation layer: expanding circular ripples, or a light bar sweeping
+// across the picture.  Everything is generated here, so it costs no SD
+// bandwidth and runs at the full 60Hz frame rate - this is the "live wallpaper"
+// that a video file could never be on this board (the card link tops out at
+// ~226KB/s, real 640x480 video needs 27MB/s).
+//
+//   ripple  concentric rings growing out of the screen centre, one ring at a
+//           time, ~3 s from birth to the screen edge, soft triangular profile
+//   sweep   a 64 px wide diagonal band sliding along x+y, one pass in ~2.3 s
+//
+// Both add a whitish glow on top of the picture (below the spectrum bars).
+// sd_ctrl 0x18 bits[5:4] pick the layer: 0 = off, 1 = ripple, 2 = sweep;
+// KEY2 on the keypad cycles those three states at run time.
+//------------------------------------------------------------------------------
+localparam [9:0] RIP_CX = 10'd320;      /* ripple centre, screen pixels */
+localparam [9:0] RIP_CY = 10'd240;
+
+reg  [5:0]  rip_ph;            /* wraps at 64: exactly one ring period */
+reg  [10:0] swp_ph;
+reg         amb_vs_q;
+
+wire amb_ftick = isp_vs & ~amb_vs_q;    /* one pulse per video frame */
+
+always @(posedge pxl_clk or posedge rst_all) begin
+    if (rst_all) begin
+        rip_ph   <= 6'd0;
+        swp_ph   <= 11'd0;
+        amb_vs_q <= 1'b0;
+    end else begin
+        amb_vs_q <= isp_vs;
+        if (amb_ftick) begin
+            /* The phase simply wraps at 32, which is exactly one period of the
+             * triangular ring profile, so the pattern never jumps - rings are
+             * continuously born at the centre and drift outwards.  The step
+             * also scales the speed: dr = 3*256/(2r) px per frame, i.e. fast
+             * at the centre and slowing as the ring expands.                */
+            rip_ph <= rip_ph + 6'd2;
+            swp_ph <= (swp_ph > 11'd1111) ? 11'd0 : swp_ph + 11'd8;
+        end
+    end
+end
+
+/* squared radius in units of 1/256 px^2 (radius 400 px = 625 units) */
+wire [9:0]  rdx = (ovf_x > RIP_CX) ? (ovf_x - RIP_CX) : (RIP_CX - ovf_x);
+wire [9:0]  rdy = (ovf_y > RIP_CY) ? (ovf_y - RIP_CY) : (RIP_CY - ovf_y);
+wire [19:0] rd2 = rdx * rdx + rdy * rdy;
+wire [11:0] rad = rd2[19:8];
+
+/* Ring profile: a 32 unit triangle of the phase difference.  Because the
+ * triangle period equals the phase wrap, the pattern is continuous in time and
+ * identical rings keep flowing outwards from the centre.                   */
+wire [11:0] rip_u   = rad - {6'd0, rip_ph};
+wire [5:0]  rip_t   = rip_u[5] ? (6'd32 - rip_u[4:0]) : {1'b0, rip_u[4:0]};
+
+/* three radius zones: brighter near the centre, calm towards the edges */
+wire [6:0]  rip_i   = {rip_t, 2'b00} + {rip_t, 1'b0};        /* 0..96 */
+wire [5:0]  rip_m   = {rip_t, 1'b0} + rip_t;                 /* 0..48 */
+wire [7:0]  rip_lvl = (rad < 12'd100) ? {1'b0, rip_i}        /* 0..96 */
+                    : (rad < 12'd260) ? {2'b00, rip_m}       /* 0..48 */
+                    :                   {3'b000, rip_t[5:1]};/* 0..16 */
+
+/* sweep: 64 px half width band along the diagonal x+y */
+wire [11:0] swp_diag = {1'b0, ovf_x} + {1'b0, ovf_y};
+wire [11:0] swp_du   = swp_diag - {1'b0, swp_ph};
+wire [11:0] swp_da   = swp_du[11] ? (12'd0 - swp_du) : swp_du;
+wire [7:0]  swp_lvl  = (swp_da < 12'd64) ? ((8'd64 - swp_da[7:0]) << 1) : 8'd0;
+
+/* which layer is showing: 0 = off, 1 = ripple, 2 = light sweep */
+wire [7:0]  amb_lvl = (sd_fx_amb == 2'd1) ? rip_lvl :
+                      (sd_fx_amb == 2'd2) ? swp_lvl : 8'd0;
+wire [7:0]  amb_on  = amb_lvl;
+
+/* additive, saturating per channel */
+wire [8:0]  amb_r = {1'b0, isp_px[23:16]} + {1'b0, amb_on};
+wire [8:0]  amb_g = {1'b0, isp_px[15:8]}  + {1'b0, amb_on};
+wire [8:0]  amb_b = {1'b0, isp_px[7:0]}   + {1'b0, amb_on};
+wire [23:0] img_x = {amb_r[8] ? 8'hFF : amb_r[7:0],
+                     amb_g[8] ? 8'hFF : amb_g[7:0],
+                     amb_b[8] ? 8'hFF : amb_b[7:0]};
+
+//------------------------------------------------------------------------------
+// P8: frame transition effects.
+//
+// The SDRAM frame store exposes a single read stream (the arbiter behind
+// frame_read_write is encrypted IP with one read port), so a true cross fade -
+// both pictures visible at once - is impossible.  What *is* possible is an
+// effect on the one picture on screen: cover it, flip the buffer while the
+// screen is covered, uncover the new picture.  M0 drives it via sd_ctrl 0x18:
+//
+//   [2:0] mode  0 none / 1 dip to black / 2 wipe / 3 blinds / 4 white flash
+//   [3]   dark  1 = cover, 0 = uncover
+//
+// k ramps toward 0 or 256 by 16 per video frame (~16 frames = 0.27 s), so the
+// firmware only has to raise `dark`, wait, commit, lower it.
+//------------------------------------------------------------------------------
+reg  [3:0]  fx_s0, fx_s1;                 // 2FF out of the 25MHz SoC domain
+reg  [8:0]  fx_k;                         // 256 = pass through, 0 = covered
+reg         fx_vs_q;
+
+wire        fx_tick = isp_vs & ~fx_vs_q;  // one pulse per video frame
+wire [2:0]  fx_mode = fx_s1[2:0];
+wire        fx_dark = fx_s1[3];
+
+always @(posedge pxl_clk or posedge rst_all) begin
+    if (rst_all) begin
+        fx_s0   <= 4'd0;
+        fx_s1   <= 4'd0;
+        fx_k    <= 9'd256;
+        fx_vs_q <= 1'b0;
+    end else begin
+        fx_s0   <= {sd_fx_dark, sd_fx_mode};
+        fx_s1   <= fx_s0;
+        fx_vs_q <= isp_vs;
+
+        if (fx_tick) begin
+            if (fx_dark) begin
+                if (fx_k != 9'd0)
+                    fx_k <= (fx_k < 9'd16) ? 9'd0 : fx_k - 9'd16;
+            end else begin
+                if (fx_k != 9'd256)
+                    fx_k <= (fx_k > 9'd240) ? 9'd256 : fx_k + 9'd16;
+            end
+        end
+    end
+end
+
+wire [23:0] fx_src = bars_mode ? dbg_pixel
+                   : (spec_on  ? spec_px
+                   : (fdisp_en ? img_x : 24'd0));
+
+// per channel scale by k/256 (mode 1) and add the flash offset (mode 4)
+wire [16:0] fx_rm = fx_src[23:16] * fx_k;
+wire [16:0] fx_gm = fx_src[15:8]  * fx_k;
+wire [16:0] fx_bm = fx_src[7:0]   * fx_k;
+wire [7:0]  fx_rs = fx_rm[15:8];
+wire [7:0]  fx_gs = fx_gm[15:8];
+wire [7:0]  fx_bs = fx_bm[15:8];
+
+wire [8:0]  fx_inv = 9'd256 - fx_k;
+wire [8:0]  fx_fr  = {1'b0, fx_rs} + fx_inv;
+wire [8:0]  fx_fg  = {1'b0, fx_gs} + fx_inv;
+wire [8:0]  fx_fb  = {1'b0, fx_bs} + fx_inv;
+
+// wipe: visible while x < k*640/256 = k*5/2
+wire [10:0] fx_wlim  = (({2'b0, fx_k} << 2) + {2'b0, fx_k}) >> 1;
+wire        fx_wipe  = ({1'b0, ovf_x} < fx_wlim);
+
+// blinds: 8 vertical curtains of 80 px, opened left to right
+wire [3:0]  fx_bar   = {3'd0, (ovf_x >= 10'd80 )} + {3'd0, (ovf_x >= 10'd160)} +
+                       {3'd0, (ovf_x >= 10'd240)} + {3'd0, (ovf_x >= 10'd320)} +
+                       {3'd0, (ovf_x >= 10'd400)} + {3'd0, (ovf_x >= 10'd480)} +
+                       {3'd0, (ovf_x >= 10'd560)};
+wire        fx_blind = ({2'b0, fx_bar} < fx_k[8:5]);
+
+wire        fx_open  = (fx_mode == 3'd2) ? fx_wipe
+                     : (fx_mode == 3'd3) ? fx_blind
+                     : 1'b1;
+
+wire [23:0] vout_data = (fx_mode == 3'd1) ? {fx_rs, fx_gs, fx_bs}
+                      : (fx_mode == 3'd4) ? {fx_fr[8] ? 8'hFF : fx_fr[7:0],
+                                             fx_fg[8] ? 8'hFF : fx_fg[7:0],
+                                             fx_fb[8] ? 8'hFF : fx_fb[7:0]}
+                      : (fx_open ? fx_src : 24'd0);
 
 assign VGA_R = vout_data[23:19];
 assign VGA_G = vout_data[15:10];

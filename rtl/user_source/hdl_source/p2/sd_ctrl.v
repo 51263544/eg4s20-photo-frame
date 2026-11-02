@@ -48,6 +48,10 @@ module sd_ctrl (
     output wire [1:0]  write_buf_idx,
     output wire [1:0]  disp_buf_idx,
     output wire        disp_en,
+    // transition effect control (0x18): mode[2:0], dark
+    output wire [2:0]  fx_mode,
+    output wire        fx_dark,
+    output wire [1:0]  fx_amb,      // 0 = off, 1 = ripple, 2 = light sweep
     // status / data from the SD chain
     input  wire        sd_init_done,
     // Asserted for ~1.3ms when a sector transfer has been stuck for ~20ms.
@@ -115,15 +119,30 @@ module sd_ctrl (
     assign pixel_offset     = pixel_offset_q;
     assign file_len         = file_len_q;
 
+    //------------------------------------------------------------------
+    // Transition effect control (write-only, 0x18)
+    //   [2:0] mode  0 none / 1 dip to black / 2 wipe / 3 blinds / 4 flash
+    //   [3]   dark  1 = fade the picture out, 0 = fade back in
+    // The pixel stage ramps a coefficient toward the requested end, so the M0
+    // only has to raise `dark` before the commit and lower it afterwards.
+    //------------------------------------------------------------------
+    wire        wr_fx = wr_strobe_q & (reg_sel_q == 3'd6);
+    reg  [5:0]  fx_q;
+    assign fx_mode = fx_q[2:0];
+    assign fx_dark = fx_q[3];
+    assign fx_amb  = fx_q[5:4];
+
     always @(posedge HCLK or negedge HRESETn) begin
         if (!HRESETn) begin
             sec_addr_q     <= 32'd0;
             pixel_offset_q <= 32'd54;
             file_len_q     <= 32'd0;
+            fx_q           <= 6'd16;   // ripple layer on by default
         end else begin
             if (wr_secaddr) sec_addr_q     <= HWDATA;
             if (wr_pxoff)   pixel_offset_q <= HWDATA;
             if (wr_filelen) file_len_q     <= HWDATA;
+            if (wr_fx)      fx_q           <= HWDATA[5:0];
         end
     end
 
@@ -314,6 +333,7 @@ module sd_ctrl (
                                stream_tgl_q, raw_done_q, hw_busy,
                                sd_init_done};
             3'd3:    HRDATA = {24'd0, raw_rdata};
+            3'd6:    HRDATA = {26'd0, fx_q};          /* +0x18 transition fx   */
             default: HRDATA = 32'd0;
         endcase
     end

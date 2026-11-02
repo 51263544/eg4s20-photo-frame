@@ -1,35 +1,10 @@
-# ---- TD / 安路 构建中间产物 ----
-rtl/p2_sd_display_Runs/
-rtl/*.al
-rtl/*.bid
-rtl/*_inst.bid
-rtl/*.rpt
-rtl/*.area
-rtl/p2_build_console.log
-rtl/.al/
-
-# ---- Keil 构建产物 ----
-firmware/Listings/
-firmware/Objects/
-firmware/*.o
-firmware/*.axf
-firmware/*.htm
-firmware/*.lnp
-firmware/*.map
-firmware/*.dep
-firmware/*.crf
-firmware/*.d
-firmware/*.bak
-firmware/*.uvguix.*
-firmware/build*.log
-
-# ---- 素材与临时文件 ----
-*.png
-*.jpg
-*.m4a
-*.mp4
-!doc/**/*.png
+*.Runs/
+*.al
+*.bid
+*.log
 __pycache__/
 *.pyc
-Thumbs.db
-desktop.ini
+build*
+runs/
+.screenshots/
+*.bak

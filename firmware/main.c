@@ -181,6 +181,15 @@ static void poll_uart(void)
 }
 
 static void key_poll(void);              /* defined with the music player  */
+static void audio_pump_ms(uint32_t ms);  /* defined with the music player  */
+
+/* Transition effect plumbing.  play_frame() covers the screen before it commits
+ * the freshly loaded buffer and uncovers it afterwards, so the buffer flip is
+ * never visible.  Every wait here keeps feeding the audio FIFO - a blocking
+ * delay longer than ~20 ms would punch a hole in the music. */
+static uint32_t fx_mode_q = FX_DIP;      /* 0..4, cycled by KEY3            */
+static uint32_t amb_q = 1u;              /* 0 off, 1 ripple, 2 sweep        */
+static void fx_phase(uint32_t dark);     /* defined below play_frame        */
 
 /* KEY0: show the raw microphone ADC frame live on the 7-segment display, about
  * four times a second.  Whistle steadily and the digits must move - that is the
@@ -334,8 +343,28 @@ static int play_frame(const bmp_entry_t *f)
         uart_puts("\r\n");
         return -7;
     }
+    /* cover the screen, flip the displayed buffer where nobody can see it, then
+     * uncover: that is the whole transition.  fx_phase() keeps feeding audio. */
+    fx_phase(1u);
     SD_CTRL = CT_COMMIT;
+    fx_phase(0u);
     return 0;
+}
+
+/* Drive the transition effect and wait for the ramp to finish.
+ * 300 ms is comfortably longer than the hardware ramp (16 frames, 0.27 s). */
+static void fx_phase(uint32_t dark)
+{
+    if (fx_mode_q == FX_NONE) {
+        if (!dark)
+            SD_XFX = (amb_q << 4);    /* no transition, but keep the ambient layer */
+        return;
+    }
+
+    SD_XFX = (fx_mode_q & FX_MODE_MASK) | (amb_q << 4) | (dark ? FX_DARK : 0u);
+    audio_pump_ms(300u);
+    if (!dark)
+        SD_XFX = (fx_mode_q & FX_MODE_MASK) | (amb_q << 4);  /* back to 256 */
 }
 
 /* blink the whole panel N times, then keep going (play-error readout) */
@@ -627,6 +656,18 @@ static int music_start_ex(const bmp_entry_t *f, uint8_t once)
     return 0;
 }
 
+/* Busy wait that keeps the audio FIFO fed.  Any delay longer than the FIFO
+ * depth (~23 ms at 22.05 kHz) has to go through here, otherwise the music
+ * stutters every time the firmware stops to show something. */
+static void audio_pump_ms(uint32_t ms)
+{
+    while (ms--) {
+        if (music_on)
+            music_service();
+        delay_ms(1u);
+    }
+}
+
 /* Looping playback (a song): KEY7 and the boot path use this one. */
 static int music_start(const bmp_entry_t *f)
 {
@@ -697,19 +738,12 @@ static void key_poll(void)
         show_hold(0xF400u | mic_on, 250u);
     }
 
-    /* KEY2 = cycle the music diagnostics on the display: sample rate, format,
-     * FIFO level, starvations/s.  On demand instead of automatically, so the
-     * key feedback above stays readable. */
+    /* KEY2 = cycle the ambient animation layer under the picture:
+     *        F600 = off, F601 = ripple, F602 = light sweep. */
     if (ev & (1u << 2)) {
-        srv_ph = (srv_ph + 1u) & 3u;
-        if (srv_ph == 0u)
-            au_disp(mt_rate, 1u);                    /* expect AC44 = 44100 */
-        else if (srv_ph == 1u)
-            au_disp((mt_ch << 8) | mt_bits, 1u);     /* expect 0210 = 2ch/16 */
-        else if (srv_ph == 2u)
-            au_disp(au_level(), 1u);                 /* expect ~1C0 words */
-        else
-            au_disp(0xA000u | (au_under_1s() & 0x0FFFu), 1u); /* A0xx = starve/s */
+        amb_q = (amb_q + 1u) % 3u;
+        SD_XFX = (fx_mode_q & FX_MODE_MASK) | (amb_q << 4);
+        au_disp(0xF600u | amb_q, 1u);
     }
 
     /* KEY9 = P7 character pack: switch to the next pack found on the card
@@ -752,13 +786,20 @@ static void key_poll(void)
     /* KEY4 = high shelf presets: 0 / +6 / +12 / +18 dB above ~880Hz (F200..F203).
      * The board's analogue low-pass costs about -10dB at 2kHz, -19dB at 4kHz
      * and -37dB at 8kHz, so music sounds muffled; the FPGA pre-emphasis puts
-     * the top end back.  Pick the biggest value that still sounds clean.
-     * Bit 3 is accepted as an alias: row 0 of the matrix (KEY3..KEY0) did not
-     * produce any event at all on this board, so the primary key is KEY4. */
-    if (ev & ((1u << 4) | (1u << 3))) {
+     * the top end back.  Pick the biggest value that still sounds clean. */
+    if (ev & (1u << 4)) {
         sh_sel = (sh_sel + 1u) % 4u;
         au_shelf(sh_tab[sh_sel]);
         au_disp(0xF200u | sh_sel, 1u);   /* stays until the next key press */
+    }
+
+    /* KEY3 = picture transition effect: none / dip to black / wipe / blinds /
+     * white flash (F500..F504).  The effect runs on every frame change; with
+     * "none" the buffer flip is a hard cut, as before. */
+    if (ev & (1u << 3)) {
+        fx_mode_q = (fx_mode_q + 1u) % 5u;
+        SD_XFX = (fx_mode_q & FX_MODE_MASK) | (amb_q << 4);
+        au_disp(0xF500u | fx_mode_q, 1u);
     }
 
     /* KEY8 = master gain 0dB / -6dB / -12dB (F300/F301/F302).  If the music
@@ -956,6 +997,7 @@ int main(void)
      *-------------------------------------------------------------------*/
     au_init(1134u, 256u);                /* 44.09kHz, unity volume         */
     au_mic_mode(0u);                     /* bars follow the SD player      */
+    SD_XFX = (fx_mode_q & FX_MODE_MASK) | (amb_q << 4);  /* fx + ambient from boot */
     au_disp(0x1234u, 1u);                /* digit order check              */
     delay_ms(1200u);
     au_disp(0u, 0u);

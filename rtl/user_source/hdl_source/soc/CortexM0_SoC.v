@@ -33,6 +33,10 @@ output wire        dbg_disp_en,  // 1 = firmware owns the 7-segment display
         output wire [1:0]   write_buf_idx,
         output wire [1:0]   disp_buf_idx,
         output wire         disp_en,
+        // P8 transition effect (sd_ctrl 0x18): mode[2:0] + dark
+        output wire [2:0]   fx_mode,
+        output wire         fx_dark,
+        output wire [1:0]   fx_amb,
         output wire         stream_active, // SD byte stream is a live STREAM command
         input  wire         sd_init_done,
         output wire         sd_reinit,     // P7: restart SD init (card swapped live)
@@ -468,7 +472,7 @@ always @(posedge sys_clk or negedge sys_rstn) begin
     if (!sys_rstn)
         dbg_probe <= 8'h00;
     else if (!boot_done)
-        dbg_probe <= 8'h3D;               /* v53 boot signature: SD hot plug + fast keys */
+        dbg_probe <= 8'hCF;               /* v60 boot signature: v58 ripple timing restored */
     else if (stuck_sticky)
         dbg_probe <= {1'b1, stall_slave, stall_off};
     else
@@ -546,6 +550,9 @@ sd_ctrl u_sd_ctrl (
         .write_buf_idx  (write_buf_idx),
         .disp_buf_idx   (disp_buf_idx),
         .disp_en        (disp_en),
+        .fx_mode        (fx_mode),
+        .fx_dark        (fx_dark),
+        .fx_amb         (fx_amb),
         .stream_active  (stream_active),
         // SD chain status face
         .sd_init_done   (sd_init_done),

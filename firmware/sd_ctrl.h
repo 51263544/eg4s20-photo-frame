@@ -13,6 +13,21 @@
 #define SD_PIXEL_OFFSET (*(volatile uint32_t *)(SD_BASE + 0x10))
 #define SD_FILE_LEN     (*(volatile uint32_t *)(SD_BASE + 0x14))
 
+/* Transition effect control (write-only, read back [3:0] for verification).
+ *   [2:0] mode  0 none / 1 dip to black / 2 wipe / 3 blinds / 4 white flash
+ *   [3]   dark  1 = cover the screen, 0 = uncover
+ * The pixel stage ramps k by 16 per video frame (~0.27 s end to end), so the
+ * firmware only raises `dark`, waits ~0.3 s, commits, then lowers it. */
+#define SD_XFX          (*(volatile uint32_t *)(SD_BASE + 0x18))
+#define FX_NONE         0u
+#define FX_DIP          1u
+#define FX_WIPE         2u
+#define FX_BLIND        3u
+#define FX_FLASH        4u
+#define FX_MODE_MASK    7u
+#define FX_DARK         (1u << 3)
+#define FX_AMB          (1u << 4)
+
 /* CTRL write bits (pulse semantics: one register write per command) */
 #define CT_RAW_READ     (1u << 0)   /* read SEC_ADDR into raw buffer (512B)   */
 #define CT_STREAM       (1u << 1)   /* read SEC_ADDR into bmp_pack stream     */
