@@ -1,0 +1,24 @@
+; *************************************************************
+; *** P2 scatter file -- single 16KB BRAM (code+data)        ***
+; *** RO  8KB  @ 0x0000_0000  (image is ~4.7KB, was 12KB)    ***
+; *** RW+ZI 4.75KB @ 0x0000_2000 (was 2.5KB: P6 needs it)    ***
+; *** ARM_LIB_STACK 0x3A00-0x4000 provides MicroLIB's       ***
+; *** __initial_sp (= 0x4000, matches vector[0] stack top)  ***
+; ***                                                       ***
+; *** RW was moved down from 0x3000 and nearly doubled when  ***
+; *** the WAV player pushed data past the old 0xA00 limit;   ***
+; *** the unused ROM half pays for it.                       ***
+; *************************************************************
+
+LR_IROM1 0x00000000 0x00004000  {
+  ER_IROM1 0x00000000 0x00002000  {   ; load address = execution address
+   *.o (RESET, +First)
+   *(InRoot$$Sections)
+   .ANY (+RO)
+   .ANY (+XO)
+  }
+  RW_IRAM1 0x00002000 0x00001300  {   ; RW + ZI data, ends 0x00003300
+   .ANY (+RW +ZI)
+  }
+  ARM_LIB_STACK 0x00003A00 EMPTY 0x00000600 { }  ; __initial_sp = 0x4000
+}

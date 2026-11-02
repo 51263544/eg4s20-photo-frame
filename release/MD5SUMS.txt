@@ -1,0 +1,7 @@
+# 发布件校验值（MD5）
+
+1F4BFAC58E9612AFD868D0C73FFD55E2  p2_sd_display.bit   648258 B   EG4S20 配置镜像（PROGRAM_FLASH 固化用）
+FAD1C79C10CD1F09AC063E44E8578D27  m0_code.hex          19540 B   Cortex-M0 固件（已内嵌进 bit，单独保留便于核对）
+
+rtl/m0_code.hex 与 firmware/m0_code.hex 应与上面第二行一致。
+开机签名 0x3D：HDMI 上电后第 1、3、4、5、6 条竖条为白，约 0.3 s 后进入画面。
