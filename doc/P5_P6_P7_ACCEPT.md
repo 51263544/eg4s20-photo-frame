@@ -42,13 +42,13 @@
 
 ### 3.1 通路
 
-`SD 卡 WAV` → M0 逐扇区读 → AHB 写 32 bit（**一个字 = 两个连续 16 bit 样本**）→ 512×32 异步 FIFO → 采样时钟 `samp_tick`（`AU_RATE` 分频，默认 1134 → 44 092 Hz）→ 可选 high-shelf → 数字音量 → **sigma-delta（默认）或 8 bit 噪声整形 PWM** → `audio_pwm`（F3）→ LMV358 二阶低通 → FM8002A 类 D 功放 → 3.5 mm / 喇叭座。麦克风是独立通路：MIC → LMV358 前级 → SPI ADC（J6/K5/H3/G6，100 kSPS）→ 仅送频谱柱，**不进功放**（不会啸叫）。
+`TF 卡 WAV` → M0 逐扇区读 → AHB 写 32 bit（**一个字 = 两个连续 16 bit 样本**）→ 512×32 异步 FIFO → 采样时钟 `samp_tick`（`AU_RATE` 分频，默认 1134 → 44 092 Hz）→ 可选 high-shelf → 数字音量 → **sigma-delta（默认）或 8 bit 噪声整形 PWM** → `audio_pwm`（F3）→ LMV358 二阶低通 → FM8002A 类 D 功放 → 3.5 mm / 喇叭座。麦克风是独立通路：MIC → LMV358 前级 → SPI ADC（J6/K5/H3/G6，100 kSPS）→ 仅送频谱柱，**不进功放**（不会啸叫）。
 
 ### 3.2 结果
 
 | 项 | 结果 | 证据 |
 |---|---|---|
-| SD 卡 exFAT WAV 流式播放 | ✅ | 44.1 kHz/16 bit/立体声，折叠单声道后 44.1 kSPS，FIFO 512 字 ≈ 11.6 ms 缓冲，实测无欠载 |
+| TF 卡 exFAT WAV 流式播放 | ✅ | 44.1 kHz/16 bit/立体声，折叠单声道后 44.1 kSPS，FIFO 512 字 ≈ 11.6 ms 缓冲，实测无欠载 |
 | 曲目循环、语音单次 | ✅ | 音乐到末尾自动重播；角色语音 `mt_once` 只播一遍 |
 | 音质 | ✅（可接受） | 修掉半速、FIFO 被 `au_level()` 恒 0 卡死、CTRL 只写寄存器误清使能等 6 个 bug 后可清晰听出原曲 |
 | 底噪 | ✅ | 8 bit PWM 的量化底噪在 A/B 中被证实；切到 sigma-delta 后杂音基本消失（带内 SNR 提升 ~20 dB） |

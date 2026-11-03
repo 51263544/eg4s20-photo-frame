@@ -71,7 +71,7 @@
 | SEG_SEL[3:0] | C9/B6/A5/A3 | audioadc.adc:10-13 · keyboard.adc:1-4 | 数码管位选，两例程交叉一致 |
 | SEG_LED[7:0] | A4/A6/B8/E8/A7/B5/A8/C8 | audioadc.adc:14-21 · keyboard.adc:5-12 | 数码管段选，两例程交叉一致 |
 
-**未采用信号**：`clk_baud=T6`（audioadc.adc:6，AudioADC 例程的测试时钟输出，本项目不用）；SD 卡 SDIO 四线的 SD_D2=G14、SD_D1=D16、E15（PDF p13，SPI 模式不接）。
+**未采用信号**：`clk_baud=T6`（audioadc.adc:6，AudioADC 例程的测试时钟输出，本项目不用）；TF 卡 SDIO 四线的 SD_D2=G14、SD_D1=D16、E15（PDF p13，SPI 模式不接）。
 
 ## 第二节 引脚总表（35 已用脚 + 8 键盘脚 + 扩展，共 59）
 
@@ -83,7 +83,7 @@
 | HDMI | 4 | P1, N1, P4, J3（LVDS33） | TMDS 差分对正端 | 无 |
 | VGA/LCD | 21 | RGB 16 + HS/VS 2（LVCMOS33, FAST）+ L13/L16/M16 | RGB565 输出 | RGB+HS+VS 共 18 脚 VGA 与 LCD 完全复用（PDF p4=p6 同一组脚）；LCD_CLK/DE/BL 为 LCD 独有 |
 | LED | 1 | B14 | 状态灯 | 无 |
-| SD | 4 | F13, F14, F15, D14 | SPI 模式 SD 卡 | F13=SD_D3、F14=SD_CMD（SDIO 四线模式的复用脚） |
+| SD | 4 | F13, F14, F15, D14 | SPI 模式 TF 卡 | F13=SD_D3、F14=SD_CMD（SDIO 四线模式的复用脚） |
 | 音频 | 1 | F3 | PWM→低通→功放 | 无 |
 | ADC | 4 | J6, K5, H3, G6 | 麦克风 SPI ADC | 无 |
 | 键盘 | 8 | col=E11/D11/C11/F10, row=E10/C10/F9/D9 | 4×4 矩阵扫描 | 无 |
@@ -97,7 +97,7 @@
 | 功能 | HX4S20C（禁） | 本板（用） |
 |---|---|---|
 | HDMI | C3 / G5 / F1 / E1 | P1 / N1 / P4 / J3 |
-| SD 卡 | A12 / A13 / A14 / B14 | F13 / F14 / F15 / D14 |
+| TF 卡 | A12 / A13 / A14 / B14 | F13 / F14 / F15 / D14 |
 | 按键 | key1=B2、key2=C1 | 矩阵键盘 8 脚 |
 | HDMI DDC | P2 / R2 | 本板无 DDC，禁用 |
 

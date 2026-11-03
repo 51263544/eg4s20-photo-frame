@@ -1,9 +1,9 @@
 # EG4S20 数码相框 / 角色立绘播放器（P2 项目最终交付版 v60）
 
 安路 **EG4S20BG256** FPGA 上从零搭建的片上系统：自写 AHB-Lite 总线 + 内嵌 **Cortex-M0** 软核，
-从 SD 卡 exFAT 分区读取 640×480 24bit BMP 角色立绘，经 SDRAM 双缓冲送到 HDMI 输出，
+从 TF 卡 exFAT 分区读取 640×480 24bit BMP 角色立绘，经 SDRAM 双缓冲送到 HDMI 输出，
 并带 **6 种色彩滤镜、5 种转场、圆形涟漪/光带环境动效、WAV 音乐播放、频谱柱、麦克风输入、
-矩阵键盘与数码管交互、SD 热插拔恢复、Flash 固化自启动**。
+矩阵键盘与数码管交互、TF 卡热插拔恢复、Flash 固化自启动**。
 
 - 版本：**v60**（2026-11-02 19:25:18）
 - 位流：`release/EG4S20_P2_Slideshow_v60.bit` — 648258 B，MD5 `FE453F83385603B6ED8E80DDFE048137`
@@ -29,7 +29,7 @@ rtl/                          FPGA 工程（TD 可直接打开/重建）
     p2/                       项目自写主体：顶层、sd_ctrl、bmp_pack、isp_filter、
                               keypad_4x4、seg_display、spectrum_bank、mic_adc、audio_ctrl
     soc/                      Cortex-M0 SoC：AHB 互联/解码/多路、Block RAM、UART、M0 核封装
-    SD/                       SD 卡 SPI 读、帧 FIFO、SDRAM 控制器、视频时序
+    SD/                       TF 卡 SPI 读、帧 FIFO、SDRAM 控制器、视频时序
     IP/                       异步 FIFO 封装、PLL
     p0b/                      HDMI TMDS 发送（厂商）
     include/                  全局参数、SDRAM 加密 IP 封装
@@ -62,7 +62,7 @@ release/                      发布件（位流 + 固件镜像 + MD5SUMS.txt）
 
 ```
                   +------------------------- Cortex-M0 SoC (25 MHz) -------------------------+
-  SD 卡 --SPI-->  sd_card_top --> sd_ctrl (AHB 从口) --+--> bmp_pack --> 写帧 FIFO --+
+  TF 卡 --SPI-->  sd_card_top --> sd_ctrl (AHB 从口) --+--> bmp_pack --> 写帧 FIFO --+
                   (6.25 MHz)      (命令/参数/流式搬运) |                              |
                                                         |                     SDRAM 双缓冲
   4×4 键盘 -----> keypad_4x4 (扫描/去抖/按键计数) ----+                              |
@@ -131,14 +131,14 @@ TD 下载对话框里：
 | KEY8 | 主音量循环 | `F300`/`F301`/`F302` |
 | KEY7 | 音乐开 / 关 | `F701`/`F700`，无 WAV 时 `E00E`，失败 `E0nn` |
 | KEY6 | 纯音开启时切换测试音频率 500/1k/2k/4k/8k；关闭时切调制器（sigma-delta / PWM） | `F10x` / `F00x` |
-| KEY5 | 1 kHz 硬件纯音开关（自检 DAC，不经过 SD） | `F005`/`F0FF` |
+| KEY5 | 1 kHz 硬件纯音开关（自检 DAC，不经过 TF 卡） | `F005`/`F0FF` |
 | KEY4 | 高频补偿 shelf：0 / +6 / +12 / +18 dB | `F200`…`F203` |
 | KEY3 | 转场效果循环：无 / 淡入 / 擦除 / 百叶窗 / 白闪 | `F500`…`F504` |
 | KEY2 | 环境动效：关 / 圆形涟漪 / 光带扫过 | `F600`/`F601`/`F602` |
-| KEY1 | 频谱柱信号源：SD 播放器 / 麦克风 | `F400`/`F401` |
+| KEY1 | 频谱柱信号源：TF 卡播放器 / 麦克风 | `F400`/`F401` |
 | KEY0 | 数码管实时显示麦克风 ADC 原始码 | 实时数值 |
 
-## 5. SD 卡结构
+## 5. TF 卡结构
 
 ```
 F:\
@@ -152,7 +152,7 @@ F:\
 - `char.ini` 只解析一行 `dwell=<秒>`（1…60），例如 `dwell=3`；不写则用默认 3 s。
 - BMP 必须 **640×480 / 24bit / 未压缩**（`tools/png2bmp.py` 生成的就是这个规格）。
 - 卡上不要有超过 2 个角色目录（驱动上限）；目录名任意，按目录项出现顺序编号。
-- 换卡：**支持热插拔**（拔卡后传输失败 → 看门狗复位 SD 状态机 → 插新卡自动重新挂载并重启轮播），
+- 换卡：**支持热插拔**（拔卡后传输失败 → 看门狗复位 TF 卡状态机 → 插新卡自动重新挂载并重启轮播），
   但演示场合建议断电换卡更稳。
 - 卡结构自检：`python tools/check_card.py`（直接读盘符，不需要管理员权限）。
 
@@ -181,7 +181,7 @@ python tools\png2bmp.py --bg black --fit contain ...  # 需要黑底/留边时
 
 ## 7. 已知限制
 
-1. **SD 带宽 226 KB/s**（实测，6.25 MHz SPI + 每扇区一条 CMD17）。理论极限 781 KB/s，
+1. **TF 卡带宽 226 KB/s**（实测，6.25 MHz SPI + 每扇区一条 CMD17）。理论极限 781 KB/s，
    71% 的时间花在命令与寻址上；改 CMD18 多块读可到 600–750 KB/s，但**仍不足以放视频**
    （640×480@30fps 需要 27 MB/s，差 120 倍）。动态壁纸因此用"实时动效层"替代。
 2. **音频模拟链路高频衰减**（底板 LMV358 低通为压 195 kHz 载波设计）：2 kHz −10 dB、8 kHz −37 dB，

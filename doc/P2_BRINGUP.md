@@ -1,9 +1,9 @@
-# P2 上板验收步骤 — SD 卡 BMP 幻灯片循环播放
+# P2 上板验收步骤 — TF 卡 BMP 幻灯片循环播放
 
 > 前置：P2 方案见 `P2_SD_DISPLAY.md`；bit 流 `project0/prj/p2_sd_display/p2_sd_display.bit`（TD 全零违例后生成）
-> 硬件：EG4S20 核心板 + HDMI 显示器 + USB 串口（115200-8N1）+ 64G SD 卡
+> 硬件：EG4S20 核心板 + HDMI 显示器 + USB 串口（115200-8N1）+ 64G TF 卡
 
-## 1. 准备 SD 卡（PC 侧）
+## 1. 准备 TF 卡（PC 侧）
 
 1. 卡保持 **exFAT** 格式（不要重新格式化为其它文件系统）。
 2. 图片转换（PNG/JPG 均可，自动缩放至 640×480 居中、24bit BMP）：

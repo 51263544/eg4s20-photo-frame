@@ -1,8 +1,8 @@
-# P2 方案 — SD 卡图片读取与循环播放（p2_sd_display）
+# P2 方案 — TF 卡图片读取与循环播放（p2_sd_display）
 
 > 生成：2026-10-27
 > 前置：P0（显示链/SDRAM IP 验证）、P1（M0 SoC + UART）均已上板通过
-> 需求：SD 卡（exFAT）存放 640×480 24bit BMP，上电后自动循环播放，每张停留 N 秒（可配）
+> 需求：TF 卡（exFAT）存放 640×480 24bit BMP，上电后自动循环播放，每张停留 N 秒（可配）
 
 ## 0. 已确认决策（2026-10-27 用户选定）
 
@@ -66,7 +66,7 @@
 | 偏移 | 名称 | 读/写 | 说明 |
 |---|---|---|---|
 | 0x00 | CTRL | W | bit0: RAW_READ 脉冲（读 SEC_ADDR 到缓冲）；bit1: STREAM 脉冲（读 SEC_ADDR 流入 packer）；bit2: PACK_RESET 脉冲（复位组包计数） |
-| 0x04 | STATUS | R | bit0: sd_init_done；bit1: hw_busy（扇区读进行中）；bit2: stream_done_toggle；bit3: raw_done；[7:4]: sd 卡状态码 |
+| 0x04 | STATUS | R | bit0: sd_init_done；bit1: hw_busy（扇区读进行中）；bit2: stream_done_toggle；bit3: raw_done；[7:4]: TF 卡状态码 |
 | 0x08 | SEC_ADDR | W | 32bit 扇区地址（先写值再发命令） |
 | 0x0C | RAW_DATA | R | raw 路径数据口（顺序读 512B，内部地址自增；RAW_READ 时复位） |
 | 0x10 | PIXEL_OFFSET | W | 组包起始字节（典型 54） |
